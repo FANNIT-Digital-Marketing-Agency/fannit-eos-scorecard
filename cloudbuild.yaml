@@ -31,6 +31,7 @@ steps:
       - --timeout=300
       - --service-account=eos-scorecard-runtime@$PROJECT_ID.iam.gserviceaccount.com
       - --set-env-vars=GCP_PROJECT=$PROJECT_ID
+      - --set-secrets=EOS_SCORECARD_SECRET=eos-api-shared-secret:latest
 
 images:
   - us-central1-docker.pkg.dev/$PROJECT_ID/eos-scorecard/eos-scorecard:$COMMIT_SHA

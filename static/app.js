@@ -3,6 +3,21 @@
 
 const ALL_AGENCIES = ["FANNIT", "TMSA", "HMC", "IPA"];
 
+// Signed short-lived access token minted by FANNIT Command and passed in the
+// iframe URL (?token=<exp>.<sig>). Forwarded on every /api call; without it
+// (or the X-EOS-Secret header, server-side only) the API returns 401.
+const ACCESS_TOKEN = new URLSearchParams(location.search).get("token") || "";
+
+const AUTH_HELP =
+  "This dashboard is private. Open it through FANNIT Command → Tools → EOS Scorecard. " +
+  "If you got here from Command, the access token has expired — reload the Command page.";
+
+function apiUrl(path, params = new URLSearchParams()) {
+  if (ACCESS_TOKEN) params.set("token", ACCESS_TOKEN);
+  const qs = params.toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
 let state = {
   agencies: [],
   unmapped: [],
@@ -12,7 +27,12 @@ let state = {
 
 async function init() {
   try {
-    const res = await fetch("/api/agencies");
+    const res = await fetch(apiUrl("/api/agencies"));
+    if (res.status === 401 || res.status === 403) {
+      renderSidebar();
+      showError(AUTH_HELP);
+      return;
+    }
     const data = await res.json();
     state.agencies = data.agencies || [];
     state.unmapped = ALL_AGENCIES.filter(a => !state.agencies.includes(a));
@@ -56,7 +76,11 @@ async function loadAgency(agency, week = null) {
   if (state.selectedWeek) params.set("date", state.selectedWeek);
 
   try {
-    const res = await fetch(`/api/scorecard?${params}`);
+    const res = await fetch(apiUrl("/api/scorecard", params));
+    if (res.status === 401 || res.status === 403) {
+      showError(AUTH_HELP);
+      return;
+    }
     const data = await res.json();
     if (!res.ok) {
       showError(`API error: ${data.error || res.status}`);

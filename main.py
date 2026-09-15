@@ -10,10 +10,11 @@ import os
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.auth import require_read_auth, require_secret_header
 from src.sheets.scorecard import AGENCY_BLOCKS, kpis_to_payload
 
 logging.basicConfig(level=logging.INFO)
@@ -29,13 +30,13 @@ def healthz():
     return {"ok": True}
 
 
-@app.get("/api/agencies")
+@app.get("/api/agencies", dependencies=[Depends(require_read_auth)])
 def list_agencies():
     """Which agencies the dashboard knows how to render right now."""
     return {"agencies": sorted(AGENCY_BLOCKS.keys())}
 
 
-@app.get("/api/scorecard")
+@app.get("/api/scorecard", dependencies=[Depends(require_read_auth)])
 def get_scorecard(agency: str = "FANNIT", date: str | None = None):
     """Returns the scorecard payload for one agency for a specific week.
 
@@ -64,15 +65,13 @@ def get_scorecard(agency: str = "FANNIT", date: str | None = None):
         )
 
 
-@app.post("/internal/snapshot")
+@app.post("/internal/snapshot", dependencies=[Depends(require_secret_header)])
 def trigger_snapshot(date: str | None = None):
     """Pull live source metrics and write them into the 2026 Scorecard tab.
 
-    Triggered weekly by Cloud Scheduler (planned) or manually. `date` is an
-    optional M/D week label; defaults to last completed week.
-
-    NOTE: not yet auth-gated. Tracked as an open item; harden with an OIDC
-    check from Cloud Scheduler before relying on the weekly cron.
+    Triggered weekly by Cloud Scheduler (Mon 06:00 PT) or manually. `date` is
+    an optional M/D week label; defaults to last completed week. Requires the
+    X-EOS-Secret header; the signed iframe token is NOT accepted here.
     """
     try:
         from src.snapshot import run_snapshot
