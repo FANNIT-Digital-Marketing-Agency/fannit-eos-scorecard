@@ -69,7 +69,7 @@ async function loadAgency(agency, week = null) {
   if (week !== null) state.selectedWeek = week;
   document.getElementById("page-title").textContent = `${agency} — EOS Scorecard`;
   renderSidebar();
-  document.getElementById("kpi-grid").innerHTML = '<div class="placeholder">Reading sheet…</div>';
+  document.getElementById("kpi-grid").innerHTML = '<div class="placeholder">Loading live data…</div>';
   document.getElementById("detail-table-wrap").innerHTML = "";
 
   const params = new URLSearchParams({ agency });
@@ -133,7 +133,7 @@ function renderGrid(kpis) {
 
 function buildCard(k) {
   const card = document.createElement("div");
-  card.className = "kpi-card";
+  card.className = "kpi-card" + (k.status === "unavailable" ? " kpi-unavailable" : "");
 
   const title = document.createElement("div");
   title.className = "kpi-title";
@@ -141,15 +141,19 @@ function buildCard(k) {
 
   const source = document.createElement("div");
   source.className = "kpi-source";
-  if (k.is_live) {
-    source.innerHTML = `${k.source || "—"} <span class="live-badge">● LIVE</span>`;
+  const src = k.source || "—";
+  if (k.status === "live") {
+    source.innerHTML = `${src} <span class="live-badge">● LIVE</span>`;
+  } else if (k.status === "unavailable") {
+    source.innerHTML = `${src} <span class="unavail-badge">unavailable</span>`;
   } else {
-    source.textContent = `${k.source || "—"} (sheet)`;
+    source.innerHTML = `${src} <span class="sheet-badge">sheet</span>`;
   }
 
   const value = document.createElement("div");
   value.className = "kpi-value";
-  value.textContent = formatValue(k.current_week_value, k.fmt);
+  value.textContent =
+    k.status === "unavailable" ? "—" : formatValue(k.current_week_value, k.fmt);
 
   const weekTag = document.createElement("div");
   weekTag.className = "kpi-week-tag";

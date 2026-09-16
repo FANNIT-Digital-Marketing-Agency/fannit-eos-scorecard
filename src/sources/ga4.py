@@ -17,7 +17,12 @@ from datetime import date, timedelta
 from functools import lru_cache
 
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
-from google.analytics.data_v1beta.types import DateRange, Metric, RunReportRequest
+from google.analytics.data_v1beta.types import (
+    DateRange,
+    Dimension,
+    Metric,
+    RunReportRequest,
+)
 
 from ..config import GA4_PROPERTY_IDS
 
@@ -66,3 +71,38 @@ def weekly_sessions(agency: str, week_label: str) -> int | None:
         return int(resp.rows[0].metric_values[0].value)
     except (ValueError, IndexError, AttributeError):
         return None
+
+
+def daily_sessions(agency: str, start_iso: str, end_iso: str) -> dict[str, int] | None:
+    """Sessions per calendar day for [start_iso, end_iso] (inclusive), keyed
+    by 'YYYY-MM-DD'. One report call covers a whole range, so the engine can
+    bucket it into weeks (current + trend) and sum it for YTD without 50+
+    per-week calls.
+
+    Returns {} for a valid empty range (a real zero, NOT an error) and None on
+    any GA4 failure so the caller can fall back to Agency Analytics.
+    """
+    pid = GA4_PROPERTY_IDS.get(agency)
+    if not pid:
+        return None
+    try:
+        resp = _client().run_report(
+            RunReportRequest(
+                property=f"properties/{pid}",
+                date_ranges=[DateRange(start_date=start_iso, end_date=end_iso)],
+                dimensions=[Dimension(name="date")],
+                metrics=[Metric(name="sessions")],
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("GA4 daily fail %s (%s): %s", agency, pid, exc)
+        return None
+    out: dict[str, int] = {}
+    for row in resp.rows:
+        try:
+            ymd = row.dimension_values[0].value  # 'YYYYMMDD'
+            iso = f"{ymd[0:4]}-{ymd[4:6]}-{ymd[6:8]}"
+            out[iso] = int(row.metric_values[0].value)
+        except (ValueError, IndexError, AttributeError):
+            continue
+    return out

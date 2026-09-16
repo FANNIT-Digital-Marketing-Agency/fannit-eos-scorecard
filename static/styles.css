@@ -195,6 +195,22 @@ body {
   font-size: 9px;
   letter-spacing: 0.04em;
 }
+.sheet-badge {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.unavail-badge {
+  color: var(--yellow);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.kpi-card.kpi-unavailable { opacity: 0.6; }
+.kpi-card.kpi-unavailable .kpi-value { color: var(--text-dim); }
 .kpi-value {
   font-size: 28px;
   font-weight: 700;

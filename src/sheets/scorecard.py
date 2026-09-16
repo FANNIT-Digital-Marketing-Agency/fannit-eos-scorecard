@@ -26,7 +26,16 @@ from datetime import date, timedelta
 from typing import Optional
 
 from .client import get_sheets_service
-from ..config import SCORECARD_SHEET_ID, SCORECARD_TAB_NAME
+from .. import weeks as W
+from ..config import (
+    CHURN_CELL,
+    CHURN_TAB_NAME,
+    SCORECARD_SHEET_ID,
+    SCORECARD_TAB_NAME,
+)
+from ..sources import kpi_engine
+
+CHURN_LABEL = "Churn Over Last 12 Months"
 
 SCORECARD_YEAR = 2026  # tab is named "2026 Scorecard"; revisit when year rolls over
 
@@ -150,7 +159,8 @@ class Kpi:
     weekly_goal: float | None  # pro-rated for incremental, target for snapshot/rate
     weekly_hit_pct: float | None  # current week against weekly goal
     is_live: bool = False  # True when value came from a live source pull
-    weeks: list[WeekValue] = field(default_factory=list)  # last 8 populated weeks
+    status: str = "unavailable"  # "live" | "sheet" | "unavailable"
+    weeks: list[WeekValue] = field(default_factory=list)  # trailing weeks trend
 
 
 def _to_float(v) -> float | None:
@@ -237,46 +247,19 @@ def _compute_weekly_hit_pct(
     return current / weekly_goal
 
 
-def read_agency_kpis(
-    agency: str,
-    week_label: str | None = None,
-    weeks_history: int = 8,
-) -> tuple[list[Kpi], list[str]]:
-    """Returns (kpis, available_week_labels).
+def _read_goals(agency: str) -> dict[str, float | None]:
+    """Annual goals (col F) for the agency's 8 KPI rows, keyed by KPI label.
 
-    Args:
-        agency: agency key (FANNIT / HMC / TMSA / IPA).
-        week_label: M/D label of the week to display as the big-number on each
-            card. If None, defaults to `last_completed_week_label()` so all
-            KPI cards land on the same week (the most recent fully-elapsed
-            week). Pass a specific label like "4/27" to render that week.
-        weeks_history: number of trailing populated weeks to return for the
-            detail-table trend strip.
-
-    The available_week_labels return value is the union of populated weekly
-    cells across all KPIs in this agency block, sorted chronologically. The
-    frontend uses it to populate the week-picker dropdown.
+    This is one of only two sheet reads left in the read path (the other is
+    churn). Everything else is sourced live.
     """
-    if agency not in AGENCY_BLOCKS:
-        raise ValueError(
-            f"Agency block for '{agency}' not yet mapped in AGENCY_BLOCKS. "
-            f"Available: {list(AGENCY_BLOCKS)}"
-        )
     block = AGENCY_BLOCKS[agency]
-    header_row = block["header_row"] + 1  # KPI column-header row (e.g. 37)
     start = block["kpi_rows_start"]
     end = start + len(KPI_LABELS) - 1
-
-    week_cols = _get_week_columns(header_row)
-    if not week_cols:
-        last_col_letter = "H"
-    else:
-        last_col_letter = _col_index_to_letter(week_cols[-1][0])
-
-    rng = f"'{SCORECARD_TAB_NAME}'!E{start}:{last_col_letter}{end}"
-    svc = get_sheets_service()
+    rng = f"'{SCORECARD_TAB_NAME}'!E{start}:F{end}"
     resp = (
-        svc.spreadsheets()
+        get_sheets_service()
+        .spreadsheets()
         .values()
         .get(
             spreadsheetId=SCORECARD_SHEET_ID,
@@ -286,98 +269,113 @@ def read_agency_kpis(
         .execute()
     )
     rows = resp.get("values", [])
-
-    # Default selected week = last completed Monday strictly before today.
-    target_label = week_label or last_completed_week_label()
-
-    out: list[Kpi] = []
-    available_dates: set[str] = set()
+    goals: dict[str, float | None] = {}
     for i, label in enumerate(KPI_LABELS):
         row = rows[i] if i < len(rows) else []
-        annual_goal = _to_float(row[1]) if len(row) > 1 else None
-        ytd_actual = _to_float(row[2]) if len(row) > 2 else None
-        hit_pct = _to_float(row[3]) if len(row) > 3 else None
+        goals[label] = _to_float(row[1]) if len(row) > 1 else None
+    return goals
 
-        # Walk weekly columns, collect all populated weekly values
-        all_weeks: list[WeekValue] = []
-        for col_idx, date_str in week_cols:
-            offset = col_idx - 5  # E is col 5 (1-based) -> offset 0
-            v = _to_float(row[offset]) if 0 <= offset < len(row) else None
-            if v is not None:
-                all_weeks.append(WeekValue(date=date_str, value=v))
-                available_dates.add(date_str)
 
-        # Pick the value for the requested target week (not rightmost).
-        selected = next((w for w in all_weeks if w.date == target_label), None)
-        current_value = selected.value if selected else None
-        current_date = target_label  # always reflect the requested week label
+def _read_churn() -> float | None:
+    """The single company-wide churn value from Stats!B19."""
+    rng = f"'{CHURN_TAB_NAME}'!{CHURN_CELL}"
+    resp = (
+        get_sheets_service()
+        .spreadsheets()
+        .values()
+        .get(
+            spreadsheetId=SCORECARD_SHEET_ID,
+            range=rng,
+            valueRenderOption="UNFORMATTED_VALUE",
+        )
+        .execute()
+    )
+    rows = resp.get("values", [])
+    if rows and rows[0]:
+        return _to_float(rows[0][0])
+    return None
 
-        # Last N trailing populated weeks for the detail-table trend strip.
-        recent = all_weeks[-weeks_history:] if all_weeks else []
 
+def read_agency_kpis(
+    agency: str,
+    week_label: str | None = None,
+    weeks_history: int = 8,
+) -> tuple[list[Kpi], list[str]]:
+    """Returns (kpis, available_week_labels) for one agency and week.
+
+    Source-first: the operational and financial KPIs come live from
+    src.sources.kpi_engine; annual goals come from the sheet (col F); churn is
+    the single Stats!B19 value. YTD and Hit % are computed from source. The
+    week list is the deterministic Monday sequence (src.weeks), not whatever
+    sheet cells happen to be populated.
+    """
+    if agency not in AGENCY_BLOCKS:
+        raise ValueError(
+            f"Agency block for '{agency}' not yet mapped in AGENCY_BLOCKS. "
+            f"Available: {list(AGENCY_BLOCKS)}"
+        )
+
+    target_label = week_label or W.default_week_label()
+    goals = _read_goals(agency)
+    churn_value = _read_churn()
+    engine = kpi_engine.compute(agency, target_label)
+
+    out: list[Kpi] = []
+    for label in KPI_LABELS:
+        annual_goal = goals.get(label)
         metric_type = KPI_TYPE.get(label, "incremental")
         weekly_goal = _compute_weekly_goal(annual_goal, metric_type)
-        weekly_hit = _compute_weekly_hit_pct(current_value, weekly_goal)
+
+        if label == CHURN_LABEL:
+            # One company-wide trailing-12mo rate; same on every agency.
+            value = churn_value
+            ytd = churn_value
+            weeks = []
+            source = "Stats sheet"
+            status = "sheet"
+            is_live = False
+        elif label in engine:
+            r = engine[label]
+            value = r.value
+            ytd = r.ytd
+            weeks = [WeekValue(date=w["date"], value=w["value"]) for w in r.weeks]
+            source = r.source
+            status = r.status
+            is_live = status == "live"
+        else:
+            value = ytd = None
+            weeks = []
+            source = KPI_DATA_SOURCE.get(label, "—")
+            status = "unavailable"
+            is_live = False
 
         out.append(
             Kpi(
                 label=label,
-                source=KPI_DATA_SOURCE.get(label, "—"),
+                source=source,
                 fmt=KPI_FORMAT.get(label, "number"),
                 metric_type=metric_type,
                 annual_goal=annual_goal,
-                ytd_actual=ytd_actual,
-                hit_pct=hit_pct,
-                current_week_value=current_value,
-                current_week_date=current_date,
+                ytd_actual=ytd,
+                hit_pct=_compute_weekly_hit_pct(ytd, annual_goal),
+                current_week_value=value,
+                current_week_date=target_label,
                 weekly_goal=weekly_goal,
-                weekly_hit_pct=weekly_hit,
-                weeks=recent,
+                weekly_hit_pct=_compute_weekly_hit_pct(value, weekly_goal),
+                is_live=is_live,
+                status=status,
+                weeks=weeks[-weeks_history:],
             )
         )
 
-    # --- Live source override --------------------------------------------
-    # For the current / last-completed week, replace the sheet value of the
-    # KPIs we can pull live (Discovery, New Sales, Onboarding). Older weeks
-    # keep the sheet value (what the snapshot job stamped at the time).
-    try:
-        from ..sources import aggregate
-
-        today_label = last_completed_week_label()
-        if aggregate.is_live_week(target_label, today_label):
-            live = aggregate.live_metrics(agency, target_label)
-            for k in out:
-                if k.label in live and live[k.label] is not None:
-                    k.current_week_value = float(live[k.label])
-                    k.weekly_hit_pct = _compute_weekly_hit_pct(
-                        k.current_week_value, k.weekly_goal
-                    )
-                    k.is_live = True
-    except Exception as exc:  # noqa: BLE001  -- live is best-effort
-        # Never let a live-source error break the sheet-backed dashboard.
-        import logging
-
-        logging.getLogger("eos-scorecard.scorecard").warning(
-            "live override skipped for %s/%s: %s", agency, target_label, exc
-        )
-
-    # Sort week labels chronologically. Format is M/D so split + int compare
-    # gives correct calendar order within a single year.
-    available_weeks = sorted(
-        available_dates,
-        key=lambda s: tuple(int(x) for x in s.split("/")),
-    )
-    return out, available_weeks
+    return out, W.all_week_labels()
 
 
 def kpis_to_payload(agency: str, week_label: str | None = None) -> dict:
-    """Public wrapper that returns a JSON-friendly payload for the API.
-
-    If week_label is None, the reader defaults to last completed week so all
-    cards land on a single aligned week.
-    """
+    """JSON-friendly payload for /api/scorecard. Defaults to the most recent
+    completed week so every card lands on the same aligned week."""
     kpis, available_weeks = read_agency_kpis(agency, week_label=week_label)
-    selected = week_label or last_completed_week_label()
+    selected = week_label or W.default_week_label()
     return {
         "agency": agency,
         "selected_week": selected,

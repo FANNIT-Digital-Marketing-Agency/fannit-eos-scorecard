@@ -138,8 +138,76 @@ QBO_AGENCIES_WITH_ACCESS = ("FANNIT", "TMSA", "HMC")
 
 
 # ---------------------------------------------------------------------------
-# Google Sheet (workbook hosting goals + weekly actuals)
+# Discovery calendars (source-first, 2026-09-16)
+#
+# The "Discovery Calls" KPI mirrors each subaccount's "Discovery Shown"
+# widget on its HighLevel "Sales Performance Dashboard": count of appointments
+# on ONE specific calendar with appointmentStatus == "showed", by start date.
+# The public API does not expose the widget, so we reproduce it from the
+# calendars/events endpoint against the exact calendar id below.
+#
+# FANNIT is confirmed (name "Discovery Call with FANNIT") and validated.
+# HMC/TMSA/IPA are best-guess: the single active, agency-branded discovery
+# calendar. Each subaccount has several active discovery-ish calendars, so
+# these three need owner confirmation of which one the widget actually counts.
+# ---------------------------------------------------------------------------
+DISCOVERY_CALENDAR_ID: dict[str, str] = {
+    "FANNIT": "BYLQV8YLL5yWU9cPSKcW",  # "Discovery Call with FANNIT" (confirmed 2026-09-16)
+    "HMC": "wv99MSr9Nj8ruZz83OYB",     # "Hardscape Marketing Crew Discovery Call" (CONFIRM)
+    "TMSA": "Kv2O6QUrBmZKdBmUIJ2n",    # "Discovery Call" (CONFIRM; also "Cold Outreach Discovery Call")
+    "IPA": "3NrLbhWHOnEEzEgzRTfC",     # "Book a Discovery Call" (CONFIRM; also "Coldoutreach Discovery Call")
+}
+DISCOVERY_SHOWN_STATUS = "showed"
+
+
+# ---------------------------------------------------------------------------
+# Agency Analytics — GA4 sessions fallback (white-label reporting.fannit.com)
+#
+# Only used when the GA4 pull errors; a legitimate zero-sessions week is NOT
+# a fallback trigger. The API key lives in Secret Manager (not yet created);
+# until then the fallback is inert and GA4 remains primary.
+# ---------------------------------------------------------------------------
+AGENCY_ANALYTICS_SECRET_NAME = "agency-analytics-api-key"
+AGENCY_ANALYTICS_BASE = "https://api.agencyanalytics.com/api/v1"
+AGENCY_ANALYTICS_CLIENT_ID: dict[str, str] = {
+    "FANNIT": "511746",
+    "HMC": "1489824",
+    "TMSA": "1554167",
+    "IPA": "1631621",
+}
+
+
+# ---------------------------------------------------------------------------
+# QBO financials via FANNIT Command (2026-09-16)
+#
+# This service does NOT talk to Intuit. FANNIT Command owns the production QBO
+# connection and exposes the three financial figures over the SAME shared
+# secret this service already holds (env EOS_SCORECARD_SECRET, secret
+# `eos-api-shared-secret`). Re-authing Intuit here would invalidate Command's
+# refresh token, so never mint a QBO grant from this project.
+#
+# Only FANNIT (Fannit LLC realm) is available. HMC/TMSA/IPA render the QBO
+# trio as "unavailable".
+# ---------------------------------------------------------------------------
+COMMAND_FINANCIALS_URL = (
+    "https://fannit-command-vqqa7p2eiq-uc.a.run.app/executive/api/financials"
+)
+COMMAND_SECRET_ENV = "EOS_SCORECARD_SECRET"
+QBO_AGENCIES = ("FANNIT",)
+
+
+# ---------------------------------------------------------------------------
+# Google Sheet (workbook hosting goals + the churn stat)
+#
+# Source-first: the dashboard reads the sheet ONLY for annual goals (col F of
+# each KPI row) and for the single company-wide churn value (Stats!B19).
+# Everything else comes from live sources. The snapshot job still writes the
+# operational weekly cells for the legacy manual view.
 # ---------------------------------------------------------------------------
 SCORECARD_SHEET_ID = "1QyyYNoNR05V8hxjGSBYfvPqWANx37kJiGw3ePx-hz8c"
 SCORECARD_TAB_NAME = "2026 Scorecard"
 UPSELLS_CHURN_TAB_GID = 130117843
+
+# Churn: one company-wide value, shown identically on every agency + rollup.
+CHURN_TAB_NAME = "Stats"
+CHURN_CELL = "B19"

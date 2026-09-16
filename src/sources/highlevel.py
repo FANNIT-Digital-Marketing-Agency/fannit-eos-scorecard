@@ -26,7 +26,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from ..config import HIGHLEVEL
+from ..config import DISCOVERY_CALENDAR_ID, DISCOVERY_SHOWN_STATUS, HIGHLEVEL
 from .secrets import get_secret
 
 log = logging.getLogger("eos-scorecard.highlevel")
@@ -142,64 +142,83 @@ def _to_pt(iso: str) -> datetime | None:
     return dt.astimezone(PT)
 
 
-def weekly_metrics(agency: str, week_start_pt: datetime, week_end_pt: datetime) -> dict:
-    """Returns {'discovery_calls', 'strategy_calls', 'new_sales'} for the
-    [week_start_pt, week_end_pt) window. Both bounds are tz-aware PT datetimes.
+def discovery_shown_starts(
+    agency: str, start_pt: datetime, end_pt: datetime
+) -> list[datetime] | None:
+    """PT start-datetimes of "shown" appointments on the agency's Discovery
+    calendar (config.DISCOVERY_CALENDAR_ID) within [start_pt, end_pt).
 
-    Any individual sub-pull that fails is logged and yields None for that
-    metric (graceful degradation) rather than failing the whole agency.
+    Mirrors the "Discovery Shown" widget: one calendar, appointmentStatus ==
+    "showed", dated by appointment start. One range call serves a whole span,
+    so the engine buckets it into weeks (current + trend) and sums for YTD.
+
+    Returns None on failure (-> KPI "unavailable"), never an empty-list-as-error.
     """
-    start_ms = int(week_start_pt.timestamp() * 1000)
-    end_ms = int(week_end_pt.timestamp() * 1000)
-
-    discovery = strategy = new_sales = None
-
-    # --- calendar events -> discovery / strategy ---
+    cal = DISCOVERY_CALENDAR_ID.get(agency)
+    if not cal:
+        return None
     try:
-        cals = _list_calendars(agency)
-        buckets = {"discovery": 0, "strategy": 0}
-        for c in cals:
-            if not c.get("isActive"):
-                continue
-            kind = _classify(c.get("name", ""))
-            if kind is None:
-                continue
-            try:
-                evs = _events(agency, c["id"], start_ms, end_ms)
-            except requests.RequestException as exc:
-                log.warning("HL events fail %s/%s: %s", agency, c.get("name"), exc)
-                continue
-            for e in evs:
-                if e.get("appointmentStatus") != SHOWED:
-                    continue
-                st = _to_pt(e.get("startTime", ""))
-                if st is None:
-                    continue
-                if week_start_pt <= st < week_end_pt:
-                    buckets[kind] += 1
-        discovery = buckets["discovery"]
-        strategy = buckets["strategy"]
+        evs = _events(
+            agency,
+            cal,
+            int(start_pt.timestamp() * 1000),
+            int(end_pt.timestamp() * 1000),
+        )
     except requests.RequestException as exc:
-        log.warning("HL calendars fail %s: %s", agency, exc)
+        log.warning("HL discovery events fail %s: %s", agency, exc)
+        return None
+    out: list[datetime] = []
+    for e in evs:
+        if e.get("appointmentStatus") != DISCOVERY_SHOWN_STATUS:
+            continue
+        st = _to_pt(e.get("startTime", ""))
+        if st is not None and start_pt <= st < end_pt:
+            out.append(st)
+    return out
 
-    # --- opportunities -> new sales (won during the week) ---
+
+def won_dates(agency: str) -> list[datetime] | None:
+    """PT datetimes at which the agency's pipeline opportunities became won
+    (lastStatusChangeAt while in the configured won stage). The full list is
+    fetched once; the engine buckets it by week for current / trend / YTD.
+
+    Returns None on failure (-> KPI "unavailable").
+    """
+    won_stage = HIGHLEVEL[agency]["won_stage_id"]
     try:
-        won_stage = HIGHLEVEL[agency]["won_stage_id"]
-        count = 0
-        for o in _won_opportunities(agency):
-            if o.get("pipelineStageId") != won_stage:
-                continue
-            changed = _to_pt(o.get("lastStatusChangeAt", ""))
-            if changed is None:
-                continue
-            if week_start_pt <= changed < week_end_pt:
-                count += 1
-        new_sales = count
+        opps = _won_opportunities(agency)
     except requests.RequestException as exc:
         log.warning("HL opportunities fail %s: %s", agency, exc)
+        return None
+    out: list[datetime] = []
+    for o in opps:
+        if o.get("pipelineStageId") != won_stage:
+            continue
+        changed = _to_pt(o.get("lastStatusChangeAt", ""))
+        if changed is not None:
+            out.append(changed)
+    return out
+
+
+def weekly_metrics(agency: str, week_start_pt: datetime, week_end_pt: datetime) -> dict:
+    """Back-compat helper for the snapshot job: {'discovery_calls',
+    'new_sales', 'strategy_calls'} for the [start, end) week. Discovery now
+    uses the specific Discovery calendar (not a name heuristic). Strategy is
+    no longer a card and is always None. Each metric is None on its own
+    failure (graceful degradation).
+    """
+    starts = discovery_shown_starts(agency, week_start_pt, week_end_pt)
+    discovery = None if starts is None else len(starts)
+
+    won = won_dates(agency)
+    new_sales = (
+        None
+        if won is None
+        else sum(1 for d in won if week_start_pt <= d < week_end_pt)
+    )
 
     return {
         "discovery_calls": discovery,
-        "strategy_calls": strategy,
+        "strategy_calls": None,
         "new_sales": new_sales,
     }
