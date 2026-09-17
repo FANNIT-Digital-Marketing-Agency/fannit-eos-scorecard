@@ -68,11 +68,13 @@ def last_completed_week_label(today: date | None = None) -> str:
 # Agency block layout in the 2026 Scorecard tab.
 # Confirmed during scoping (2026-04-27); TMSA / IPA offsets to be verified
 # the first time the reader runs against them.
+# IPA and TMSA dropped 2026-09-17 (no longer tracked). Their block offsets are
+# kept here commented for easy restore.
 AGENCY_BLOCKS: dict[str, dict[str, int]] = {
     "FANNIT": {"header_row": 36, "kpi_rows_start": 38},
     "HMC": {"header_row": 73, "kpi_rows_start": 75},
-    "TMSA": {"header_row": 94, "kpi_rows_start": 96},
-    "IPA": {"header_row": 115, "kpi_rows_start": 117},
+    # "TMSA": {"header_row": 94, "kpi_rows_start": 96},
+    # "IPA": {"header_row": 115, "kpi_rows_start": 117},
 }
 
 

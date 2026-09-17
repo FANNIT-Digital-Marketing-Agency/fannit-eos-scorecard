@@ -14,7 +14,9 @@ from typing import TypedDict
 # ---------------------------------------------------------------------------
 # Agency keys used everywhere in the codebase.
 # ---------------------------------------------------------------------------
-AGENCIES = ("FANNIT", "TMSA", "HMC", "IPA")
+# Tracked agencies. IPA and TMSA dropped 2026-09-17 (no longer tracked); their
+# per-source config entries below are retained but unused so this is reversible.
+AGENCIES = ("FANNIT", "HMC")
 
 
 # ---------------------------------------------------------------------------

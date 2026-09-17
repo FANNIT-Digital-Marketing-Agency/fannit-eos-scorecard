@@ -1,7 +1,7 @@
 // EOS L10 Scorecard - frontend
 // Reads goals + YTD + last-N weekly actuals from /api/scorecard.
 
-const ALL_AGENCIES = ["FANNIT", "TMSA", "HMC", "IPA"];
+const ALL_AGENCIES = ["FANNIT", "HMC"];
 
 // Signed short-lived access token minted by FANNIT Command and passed in the
 // iframe URL (?token=<exp>.<sig>). Forwarded on every /api call; without it
@@ -25,24 +25,41 @@ let state = {
   selectedWeek: null,  // M/D label, or null = backend picks last-completed
 };
 
+async function fetchAgencies() {
+  const res = await fetch(apiUrl("/api/agencies"));
+  if (res.status === 401 || res.status === 403) return { auth: true };
+  if (!res.ok) return { error: `The scorecard API returned ${res.status}.` };
+  const data = await res.json();
+  return { agencies: data.agencies || [] };
+}
+
 async function init() {
-  try {
-    const res = await fetch(apiUrl("/api/agencies"));
-    if (res.status === 401 || res.status === 403) {
-      renderSidebar();
-      showError(AUTH_HELP);
-      return;
+  // Retry once: a transient failure (cold start, mid-deploy) should not look
+  // like a hard error. A rejected/expired token still returns a clean 401.
+  let result = null;
+  for (let attempt = 0; attempt < 2 && !result; attempt++) {
+    try {
+      result = await fetchAgencies();
+    } catch (err) {
+      console.error("agency list attempt failed", err);
+      if (attempt === 0) await new Promise(r => setTimeout(r, 800));
+      else result = { error: "Could not reach the scorecard API." };
     }
-    const data = await res.json();
-    state.agencies = data.agencies || [];
-    state.unmapped = ALL_AGENCIES.filter(a => !state.agencies.includes(a));
-    state.current = state.agencies[0] || null;
-  } catch (err) {
-    console.error("agency list failed", err);
   }
+
+  if (result.auth) { renderSidebar(); showError(AUTH_HELP); return; }
+  if (result.error) {
+    renderSidebar();
+    showError(`${result.error} If you opened this through FANNIT Command, reload that page to refresh access.`);
+    return;
+  }
+
+  state.agencies = result.agencies;
+  state.unmapped = ALL_AGENCIES.filter(a => !state.agencies.includes(a));
+  state.current = state.agencies[0] || null;
   renderSidebar();
   if (state.current) await loadAgency(state.current);
-  else showError("No agencies mapped yet.");
+  else showError("No agencies are mapped. Check AGENCY_BLOCKS in the scorecard config.");
 }
 
 function renderSidebar() {
