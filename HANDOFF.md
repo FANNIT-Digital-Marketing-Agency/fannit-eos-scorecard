@@ -8,6 +8,8 @@ This file captures **only** what isn't already in the repo's permanent docs: ses
 
 ---
 
+> **ACTIVE WORK (2026-08-16): source-first refinement.** Before doing anything with data sourcing, read `SCORECARD_REFINEMENT_BRIEF.md` in the repo root. It is the current, agreed spec (each KPI sourced live from its system, sheet used only for goals + the `Stats!B19` churn cell) and it supersedes the sheet-first sourcing described below. All sourcing decisions are already made there; do not re-litigate them.
+
 ## 1. Read these first, in this order
 
 | Order | File (absolute path) | Why |
@@ -20,13 +22,13 @@ This file captures **only** what isn't already in the repo's permanent docs: ses
 | 6 | `G:\fannit-eos-scorecard\main.py` | FastAPI endpoints. Small file; read it once. |
 | 7 | `G:\fannit-eos-scorecard\Dockerfile`, `cloudbuild.yaml`, `requirements.txt` | Deployment surface. |
 
-Org-level mirror of the brief (kept in sync): `FANNIT-hub/fannit-system-docs` → `briefs/EOS_SCORECARD_MASTER_BRIEF.md`. Use the repo copy as canonical.
+Org-level mirror of the brief (kept in sync): `FANNIT-Digital-Marketing-Agency/fannit-system-docs` → `briefs/EOS_SCORECARD_MASTER_BRIEF.md`. Use the repo copy as canonical.
 
 ---
 
 ## 2. System snapshot (as of 2026-05-18)
 
-- **Repo:** `https://github.com/FANNIT-hub/fannit-eos-scorecard`
+- **Repo:** `https://github.com/FANNIT-Digital-Marketing-Agency/fannit-eos-scorecard`
 - **Local working copy:** `G:\fannit-eos-scorecard`
 - **Latest commit on `main`:** `6a4c75b` (Add SOP). HEAD is fully pushed.
 - **Cloud Run revision live:** `eos-scorecard-00008-vqc` (commit `d965b3d`, "ga4live"). The two later commits (`9c72721`, `6a4c75b`) are docs only — no redeploy needed for them.
@@ -112,13 +114,13 @@ gcloud auth application-default login
 
 ### 4.2 GitHub (required for push)
 
-The new account must have push access on `FANNIT-hub/fannit-eos-scorecard`. Confirm by visiting the repo on github.com; if "Settings" is visible, you're in. Otherwise ask Chris to add the account.
+The new account must have push access on `FANNIT-Digital-Marketing-Agency/fannit-eos-scorecard`. Confirm by visiting the repo on github.com; if "Settings" is visible, you're in. Otherwise ask Chris to add the account.
 
 ```
 git config --global user.name "<name>"
 git config --global user.email "<email matching the GitHub account>"
 git -C "G:\fannit-eos-scorecard" remote -v
-# expect: origin https://github.com/FANNIT-hub/fannit-eos-scorecard.git
+# expect: origin https://github.com/FANNIT-Digital-Marketing-Agency/fannit-eos-scorecard.git
 ```
 
 ### 4.3 MCP connectors (Claude-account-scoped — re-add as needed)
@@ -214,7 +216,7 @@ A fresh session should **re-surface this question to Chris before doing any sour
 
 5. **Connect GitHub → Cloud Build** (one-time UI auth at `https://console.cloud.google.com/cloud-build/triggers/connect?project=fannit-eos-scorecard`) so future commits auto-deploy. Note the 2nd-gen-trigger `serviceAccount` requirement (must use REST API, not `gcloud builds triggers create`; see Chris's standing memory note).
 
-6. **Keep BRIEF.md + SOP.md current** — every architecture change or new known issue updates the brief and gets mirrored to `FANNIT-hub/fannit-system-docs/briefs/EOS_SCORECARD_MASTER_BRIEF.md` (clone, copy, commit `Sync EOS Scorecard brief - <date>`, push).
+6. **Keep BRIEF.md + SOP.md current** — every architecture change or new known issue updates the brief and gets mirrored to `FANNIT-Digital-Marketing-Agency/fannit-system-docs/briefs/EOS_SCORECARD_MASTER_BRIEF.md` (clone, copy, commit `Sync EOS Scorecard brief - <date>`, push).
 
 ---
 

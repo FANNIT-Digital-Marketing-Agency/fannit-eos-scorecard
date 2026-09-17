@@ -2,7 +2,9 @@
 
 > **Audience:** Chris Fink (owner) and any future operator (technical or non-technical) who needs to run, deploy, debug, or extend this system.
 >
-> **Status:** Living document. Update on every architectural change, new integration, or new operational procedure. Last meaningful update: 2026-05-18 (GA4 + HL + Teamwork live; 4/8 KPIs sourced).
+> **Status:** Living document. Update on every architectural change, new integration, or new operational procedure. Last meaningful update: 2026-09-17 (source-first refactor deployed).
+>
+> **CURRENT STATE (2026-09-17):** The dashboard is now **source-first**. Every operational and financial KPI is sourced live per week from GA4, HighLevel, Teamwork, and (for FANNIT financials) the FANNIT Command QBO endpoint. The sheet is read ONLY for annual goals (col F) and the single churn value (`Stats!B19`). The API is now **gated** behind the shared secret / signed iframe token (no longer public). Deployed revision `eos-scorecard-00009-l4f` (commit `c2f141d`). The authoritative current spec is **`SCORECARD_REFINEMENT_BRIEF.md`**; wherever the sections below describe the old sheet-first sourcing or an ungated API, that brief supersedes them.
 
 ---
 
@@ -55,7 +57,7 @@ Serving layer: read-only dashboard from Cloud Run mirroring the Perplexity-built
 | Resource | URL |
 |---|---|
 | Dashboard (live) | https://eos-scorecard-btpczli7ra-uc.a.run.app |
-| GitHub repo | https://github.com/FANNIT-hub/fannit-eos-scorecard |
+| GitHub repo | https://github.com/FANNIT-Digital-Marketing-Agency/fannit-eos-scorecard |
 | Cloud Build (build progress) | https://console.cloud.google.com/cloud-build/builds?project=fannit-eos-scorecard |
 | Cloud Run revisions | https://console.cloud.google.com/run/detail/us-central1/eos-scorecard/revisions?project=fannit-eos-scorecard |
 | Secret Manager | https://console.cloud.google.com/security/secret-manager?project=fannit-eos-scorecard |
@@ -67,7 +69,7 @@ Latest deployed Cloud Run revision: `eos-scorecard-00008-vqc` (commit `d965b3d`,
 
 ## 3. Repo structure
 
-`G:\fannit-eos-scorecard\` (local working copy) → `https://github.com/FANNIT-hub/fannit-eos-scorecard.git`
+`G:\fannit-eos-scorecard\` (local working copy) → `https://github.com/FANNIT-Digital-Marketing-Agency/fannit-eos-scorecard.git`
 
 ```
 fannit-eos-scorecard/
@@ -546,4 +548,5 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 | 2026-05-11 | `401d2cd` | Session wrap-up: brief refreshed with architectural intent (sources-primary, sheet-as-write-target), GA4 access blocker logged, QBO MCP connector noted as out-of-band tool. Synced to `fannit-system-docs`. |
 | 2026-05-18 | `ga4live` | **GA4 live.** Runtime SA granted Viewer on all 4 properties via OAuth Playground (`analytics.manage.users`) + Admin API `accessBindings` v1alpha. `src/sources/ga4.py` (google-analytics-data SDK, ADC). Website/LP Traffic now live for all 4 agencies + written by snapshot. Verified week 5/11: FANNIT 223, HMC 142, TMSA 84, IPA 25. 4 of 8 KPIs now live (Traffic, Discovery, New Sales, Onboarding). Remaining: Churn (sheet, intentional), AR/Cash Collected/Cash on Hand (QBO, blocked on Intuit Dev app). |
 | 2026-05-18 | `ebecf9b` | **Live sources shipped.** HighLevel (Discovery, New Sales, Strategy/Planning) + Teamwork (Onboarding) clients built and deployed. `src/sources/{secrets,highlevel,teamwork,aggregate}.py` + `src/snapshot.py`. Dashboard overrides sheet with live values for current/last-completed week (10-min TTL cache, sheet fallback for older weeks + Teamwork's no-history limitation), shows ● LIVE vs (sheet) badge per card. `/internal/snapshot` writes pulled values into the 2026 Scorecard weekly cells — verified 12 cells written for week 5/11 across all 4 agencies. HL calendar pipeline-link rule dropped (HL calendar object has no pipelineId) — falls back to active + non-internal + name-token rule. Dropped python-dateutil, added tzdata. Churn stays sheet-sourced by design. GA4 confirmed hard-blocked: gcloud refuses to mint an analytics-scoped token from existing creds; needs Chris's one `gcloud auth application-default login --scopes=...analytics.edit` command. |
+| 2026-09-17 | `c2f141d` | **Source-first refactor deployed** (rev `eos-scorecard-00009-l4f`). Every KPI now sourced live per selected week (value + YTD + 8-week trend + provenance) via `src/sources/kpi_engine.py` + `src/weeks.py`; sheet read only for goals (col F) and churn (`Stats!B19`). HL Discovery counts the specific "Discovery Shown" calendar (`config.DISCOVERY_CALENDAR_ID`; FANNIT confirmed, HMC/TMSA/IPA best-guess pending owner confirmation); New Sales = won-dated opps. Financials (AR 30+ / Cash Collected / Cash on Hand) pulled from FANNIT Command `/executive/api/financials` over the existing shared secret (no Intuit; FANNIT only, others "unavailable"). YTD/Hit% computed from source; retry-then-unavailable, no sheet fallback. Week model + picker now deterministic (all Mondays), default = previous completed week. Frontend live/sheet/unavailable badges. Shipped the auth gate (`225ecc6`) so the API is no longer public. Verified in prod: Traffic 28,145 YTD sessions (GA4), Discovery YTD 25, churn 4.14% from Stats!B19, financials live. Agency Analytics fallback scaffolded but inert (key + verified endpoint pending). Authoritative spec: `SCORECARD_REFINEMENT_BRIEF.md`. |
 

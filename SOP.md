@@ -1,10 +1,12 @@
 # FANNIT EOS L10 Scorecard — Administration & Management SOP
 
-**Version:** 2026-05-18
+**Version:** 2026-09-17
 **Status:** Active
 **Owner:** Chris Fink (build owner). Operator escalation: see Section 12.
 
 > Audience: technically competent maintainers unfamiliar with this codebase. For the architectural narrative and change log, see `BRIEF.md` in the repo root. This SOP is the operational runbook.
+
+> **CURRENT STATE (2026-09-17):** Source-first is LIVE. KPIs are pulled live per week (GA4, HighLevel, Teamwork, and FANNIT Command for FANNIT financials); the sheet is read only for goals (col F) and churn (`Stats!B19`). The API is **gated** behind the shared secret (`X-EOS-Secret`) or the signed iframe token, not public. Deployed revision `eos-scorecard-00009-l4f` (commit `c2f141d`). Where sections below describe sheet-first sourcing or an ungated API, defer to `SCORECARD_REFINEMENT_BRIEF.md` (authoritative current spec).
 
 ---
 
@@ -111,7 +113,7 @@ Cloud Build default SA. Has project-level `run.admin`, `iam.serviceAccountUser`,
 | `GCP_PROJECT` env var | Secret Manager project resolution | Cloud Run env var (`cloudbuild.yaml`) | n/a |
 | QBO `client_id`/`client_secret`/refresh tokens | **Not yet provisioned** | Planned Secret Manager `qbo-*` | OAuth refresh tokens auto-renew on use once built |
 
-- **Who has access:** Chris owns the GCP project, the GitHub org `FANNIT-hub`, the Google Sheet, the HL sub-accounts, the Teamwork instance, and the GA4 properties. Request access through him.
+- **Who has access:** Chris owns the GCP project, the GitHub org `FANNIT-Digital-Marketing-Agency` (hosts this repo and `fannit-system-docs`), the Google Sheet, the HL sub-accounts, the Teamwork instance, and the GA4 properties. Request access through him.
 - **No OAuth tokens are stored in production.** The only OAuth flow used was a one-time OAuth Playground token to grant the runtime SA on GA4 properties (Section 7, item 6). It was short-lived and is not persisted anywhere.
 - To list current secrets:
   ```
@@ -434,13 +436,13 @@ After adding OIDC auth to `/internal/snapshot`, create a Cloud Scheduler job (Mo
 
 - **Build owner / primary escalation:** Chris Fink [NEEDS CONFIRMATION: preferred contact channel]
 - **Operator backups:** [NEEDS CONFIRMATION: who besides Chris can run/redeploy]
-- **GitHub:** repo `FANNIT-hub/fannit-eos-scorecard` (org admin: Chris)
+- **GitHub:** repo `FANNIT-Digital-Marketing-Agency/fannit-eos-scorecard` (org admin: Chris)
 - **Vendor support:**
   - Google Cloud (Cloud Run, Secret Manager, Sheets/Analytics APIs): GCP Console support for project `fannit-eos-scorecard`
   - HighLevel: agency HL account support
   - Teamwork: Teamwork support for `fannit.teamwork.com`
   - Intuit Developer (QBO, once built): developer.intuit.com support
-- **Source-of-truth docs:** `BRIEF.md` (repo root) and the mirror at `FANNIT-hub/fannit-system-docs` → `briefs/EOS_SCORECARD_MASTER_BRIEF.md`
+- **Source-of-truth docs:** `BRIEF.md` (repo root) and the mirror at `FANNIT-Digital-Marketing-Agency/fannit-system-docs` → `briefs/EOS_SCORECARD_MASTER_BRIEF.md`
 
 ---
 
